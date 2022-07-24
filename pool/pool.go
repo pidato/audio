@@ -34,19 +34,33 @@ var (
 	Opus60ms    = newPCMPool(48000, frameSize48khz60ms, nil)
 	Opus120ms   = newPCMPool(48000, frameSize48khz120ms, nil)
 
-	Bytes10  = newBytes(10)
-	Bytes20  = newBytes(20)
-	Bytes30  = newBytes(30)
-	Bytes40  = newBytes(40)
-	Bytes60  = newBytes(60)
-	Bytes80  = newBytes(80)
-	Bytes120 = newBytes(120)
-	Bytes160 = newBytes(160)
-	Bytes240 = newBytes(240)
-	Bytes320 = newBytes(320)
-	Bytes480 = newBytes(480)
-	Bytes640 = newBytes(640)
-	Bytes960 = newBytes(960)
+	Bytes10    = newBytes(10)
+	Bytes20    = newBytes(20)
+	Bytes30    = newBytes(30)
+	Bytes32    = newBytes(32)
+	Bytes40    = newBytes(40)
+	Bytes60    = newBytes(60)
+	Bytes64    = newBytes(64)
+	Bytes80    = newBytes(80)
+	Bytes120   = newBytes(120)
+	Bytes128   = newBytes(128)
+	Bytes160   = newBytes(160)
+	Bytes240   = newBytes(240)
+	Bytes256   = newBytes(256)
+	Bytes320   = newBytes(320)
+	Bytes480   = newBytes(480)
+	Bytes512   = newBytes(512)
+	Bytes640   = newBytes(640)
+	Bytes768   = newBytes(768)
+	Bytes960   = newBytes(960)
+	Bytes1024  = newBytes(1024)
+	Bytes1500  = newBytes(1500)
+	Bytes2048  = newBytes(2048)
+	Bytes4096  = newBytes(4096)
+	Bytes8192  = newBytes(8192)
+	Bytes16384 = newBytes(16384)
+	Bytes32768 = newBytes(32768)
+	Bytes65535 = newBytes(65535)
 
 	I1680  = newI16Pool(80)
 	I16120 = newI16Pool(120)
@@ -205,7 +219,7 @@ func newBytes(size int) *Bytes {
 		size: size,
 		pool: syncx.Pool{New: func() interface{} {
 			return make([]byte, size, size)
-		}},
+		}, NoGC: true},
 	}
 	return p
 }
@@ -277,36 +291,92 @@ func (p *I16Pool) Release(buf []int16) {
 
 func U8Get(size int) []byte {
 	switch size {
+	case 32:
+		return Bytes32.Get()
+	case 64:
+		return Bytes64.Get()
 	case 80:
 		return Bytes80.Get()
+	case 128:
+		return Bytes128.Get()
 	case 160:
 		return Bytes160.Get()
+	case 256:
+		return Bytes256.Get()
 	case 320:
 		return Bytes320.Get()
 	case 480:
 		return Bytes480.Get()
+	case 512:
+		return Bytes512.Get()
 	case 640:
 		return Bytes640.Get()
+	case 768:
+		return Bytes768.Get()
 	case 960:
 		return Bytes960.Get()
+	case 1024:
+		return Bytes1024.Get()
+	case 1500:
+		return Bytes1500.Get()
+	case 2048:
+		return Bytes2048.Get()
+	case 4096:
+		return Bytes4096.Get()
+	case 8192:
+		return Bytes8192.Get()
+	case 16384:
+		return Bytes16384.Get()
+	case 32768:
+		return Bytes32768.Get()
+	case 65535:
+		return Bytes65535.Get()
 	}
 	return make([]byte, size, size)
 }
 
 func U8Release(b []byte) {
 	switch cap(b) {
+	case 32:
+		Bytes32.Release(b)
+	case 64:
+		Bytes64.Release(b)
 	case 80:
 		Bytes80.Release(b)
+	case 128:
+		Bytes128.Release(b)
 	case 160:
 		Bytes160.Release(b)
+	case 256:
+		Bytes256.Release(b)
 	case 320:
 		Bytes320.Release(b)
 	case 480:
 		Bytes480.Release(b)
+	case 512:
+		Bytes512.Release(b)
 	case 640:
 		Bytes640.Release(b)
+	case 768:
+		Bytes768.Release(b)
 	case 960:
 		Bytes960.Release(b)
+	case 1024:
+		Bytes1024.Release(b)
+	case 1500:
+		Bytes1500.Release(b)
+	case 2048:
+		Bytes2048.Release(b)
+	case 4096:
+		Bytes4096.Release(b)
+	case 8192:
+		Bytes8192.Release(b)
+	case 16384:
+		Bytes16384.Release(b)
+	case 32768:
+		Bytes32768.Release(b)
+	case 65535:
+		Bytes65535.Release(b)
 	}
 }
 

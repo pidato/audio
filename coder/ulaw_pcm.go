@@ -1,9 +1,10 @@
-package transcode
+package coder
 
 import (
 	"errors"
 	"fmt"
 	"github.com/pidato/audio/codec"
+	"github.com/pidato/audio/g711"
 	"github.com/pidato/audio/pool"
 	"github.com/pidato/audio/util"
 	"github.com/pidato/audio/vad"
@@ -11,7 +12,7 @@ import (
 	"time"
 )
 
-var _ Transcoder = &ulawpcm{}
+var _ Coder = &ulawpcm{}
 
 type ulawpcm struct {
 	to             codec.Codec
@@ -126,7 +127,7 @@ func (u *ulawpcm) Close() error {
 
 func (u *ulawpcm) push(b []byte) error {
 	if u.vad != nil {
-		codec.DecodeULAW(u.pcm, b)
+		g711.DecodeULAW(u.pcm, b)
 		u.vadState = u.vad.Process(u.pcm)
 
 		frame := u.pcm

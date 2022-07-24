@@ -1,14 +1,15 @@
-package transcode
+package coder
 
 import (
 	"github.com/pidato/audio/codec"
+	"github.com/pidato/audio/g711"
 	"github.com/pidato/audio/pool"
 	"github.com/pidato/audio/vad"
 	"io"
 	"time"
 )
 
-var _ Transcoder = &ulaw2ulaw{}
+var _ Coder = &ulaw2ulaw{}
 
 type ulaw2ulaw struct {
 	pcm       []int16
@@ -104,7 +105,7 @@ func (u *ulaw2ulaw) Close() error {
 
 func (u *ulaw2ulaw) push(b []byte) error {
 	if u.vad != nil {
-		codec.DecodeULAW(u.pcm, b)
+		g711.DecodeULAW(u.pcm, b)
 		u.vadState = u.vad.Process(u.pcm)
 		if u.vadState == vad.Voice {
 			return u.onFrame(NewFrame(FrameVoice, u.stats.ptime, b))

@@ -1,5 +1,10 @@
 package g711
 
+import (
+	"github.com/pidato/audio/pool"
+	"unsafe"
+)
+
 const (
 	uLawBias = 0x84
 	uLawClip = 0x7F7B
@@ -60,6 +65,7 @@ var (
 		120, 112, 104, 96, 88, 80, 72, 64,
 		56, 48, 40, 32, 24, 16, 8, 0,
 	}
+	ulaw2lpcmPointer = unsafe.Pointer(&ulaw2lpcm[0])
 	// u-law to A-law conversion lookup table based on the ITU-T G.711 specification
 	ulaw2alaw = [256]uint8{
 		42, 43, 40, 41, 46, 47, 44, 45, 34, 35, 32, 33, 38, 39, 36, 37,
@@ -81,31 +87,42 @@ var (
 	}
 )
 
-// EncodeUlaw encodes 16bit LPCM data to G711 u-law PCM
-func EncodeUlaw(lpcm []byte) []byte {
-	if len(lpcm) < 2 {
-		return []byte{}
+func DecodeULAW(dst []int16, src []byte) []int16 {
+	if len(src) == 0 {
+		return nil
 	}
-	ulaw := make([]byte, len(lpcm)/2)
-	for i, j := 0, 0; j <= len(lpcm)-2; i, j = i+1, j+2 {
-		ulaw[i] = EncodeUlawFrame(int16(lpcm[j]) | int16(lpcm[j+1])<<8)
+	if len(dst) < len(src) {
+		dst = pool.I16Get(len(src))
 	}
-	return ulaw
-}
-
-// EncodeUlaw encodes 16bit LPCM data to G711 u-law PCM
-func EncodeUlawTo(dst []byte, lpcm []int16) []byte {
-	if len(dst) < len(lpcm) {
-		dst = make([]byte, len(lpcm))
-	}
-	for i := 0; i < len(lpcm); i++ {
-		dst[i] = EncodeUlawFrame(lpcm[i])
+	var (
+		d = unsafe.Pointer(&dst[0])
+		s = unsafe.Pointer(&src[0])
+	)
+	for i := 0; i < len(dst); i++ {
+		*(*int16)(unsafe.Add(d, i*2)) = *(*int16)(unsafe.Add(ulaw2lpcmPointer, *(*byte)(unsafe.Add(s, i))))
 	}
 	return dst
 }
 
-// EncodeUlawFrame encodes a 16bit LPCM frame to G711 u-law PCM
-func EncodeUlawFrame(frame int16) uint8 {
+func EncodeULAW(dst []byte, src []int16) []byte {
+	if len(src) == 0 {
+		return nil
+	}
+	if len(dst) < len(src) {
+		dst = pool.U8Get(len(src))
+	}
+	var (
+		d = unsafe.Pointer(&dst[0])
+		s = unsafe.Pointer(&src[0])
+	)
+	for i := 0; i < len(dst); i++ {
+		*(*byte)(unsafe.Add(d, i)) = EncodeULAWFrame(*(*int16)(unsafe.Add(s, i*2)))
+	}
+	return dst
+}
+
+// encodeULAWFrame encodes a 16bit LPCM frame to G711 u-law PCM
+func EncodeULAWFrame(frame int16) uint8 {
 	/*
 		The algorithm first stores off the sign. It then adds in a bias value
 		which (due to wrapping) will cause high valued samples to lose precision.
@@ -129,32 +146,21 @@ func EncodeUlawFrame(frame int16) uint8 {
 	return uint8(^(sign | (int16(segment) << 4) | bottom))
 }
 
-// DecodeUlaw decodes u-law PCM data to 16bit LPCM
-func DecodeUlaw(pcm []byte) []byte {
-	lpcm := make([]byte, len(pcm)*2)
-	for i, j := 0, 0; i < len(pcm); i, j = i+1, j+2 {
-		frame := ulaw2lpcm[pcm[i]]
-		lpcm[j] = byte(frame)
-		lpcm[j+1] = byte(frame >> 8)
-	}
-	return lpcm
-}
-
-// DecodeUlawFrame decodes a u-law PCM frame to 16bit LPCM
+// decodeUlawFrame decodes a u-law PCM frame to 16bit LPCM
 func DecodeUlawFrame(frame uint8) int16 {
 	return ulaw2lpcm[frame]
 }
 
-// Ulaw2Alaw performs direct u-law to A-law data conversion
-func Ulaw2Alaw(ulaw []byte) []byte {
-	alaw := make([]byte, len(ulaw))
-	for i := 0; i < len(alaw); i++ {
-		alaw[i] = ulaw2alaw[ulaw[i]]
-	}
-	return ulaw
-}
-
-// Ulaw2AlawFrame directly converts a u-law frame to A-law
-func Ulaw2AlawFrame(frame uint8) uint8 {
-	return ulaw2alaw[frame]
-}
+//// Ulaw2Alaw performs direct u-law to A-law data conversion
+//func Ulaw2Alaw(ulaw []byte) []byte {
+//	alaw := make([]byte, len(ulaw))
+//	for i := 0; i < len(alaw); i++ {
+//		alaw[i] = ulaw2alaw[ulaw[i]]
+//	}
+//	return ulaw
+//}
+//
+//// Ulaw2AlawFrame directly converts a u-law frame to A-law
+//func Ulaw2AlawFrame(frame uint8) uint8 {
+//	return ulaw2alaw[frame]
+//}

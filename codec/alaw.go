@@ -2,7 +2,6 @@ package codec
 
 import (
 	"github.com/pidato/audio/pool"
-	"github.com/pidato/audio/transcode"
 	"unsafe"
 )
 
@@ -175,8 +174,4 @@ func (alaw) Name() string {
 
 func (alaw) SampleRate() int32 {
 	return 8000
-}
-
-func (alaw) NewTranscoder(to Codec, algo transcode.VADAlgo, ptime Ptime, onFrame transcode.OnFrame) (transcode.Transcoder, error) {
-	return nil, transcode.ErrNotSupported
 }

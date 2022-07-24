@@ -1,4 +1,4 @@
-package transcode
+package coder
 
 import (
 	"github.com/pidato/audio/codec"
@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var _ Transcoder = &g729g729{}
+var _ Coder = &g729g729{}
 
 type g729g729 struct {
 	frame    []int16

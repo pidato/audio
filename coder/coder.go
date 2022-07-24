@@ -1,4 +1,4 @@
-package transcode
+package coder
 
 import (
 	"errors"
@@ -16,7 +16,7 @@ var (
 	ErrInvalidPtime     = errors.New("invalid ptime")
 )
 
-type Transcoder interface {
+type Coder interface {
 	io.Closer
 
 	From() codec.Codec
@@ -38,16 +38,16 @@ type Transcoder interface {
 	Transcode(kind FrameType, b []byte) error
 }
 
-func NewTranscoder(
+func New(
 	from codec.Codec,
 	to codec.Codec,
 	algo VADAlgo,
 	ptime codec.Ptime,
 	onFrame OnFrame,
-) (Transcoder, error) {
+) (Coder, error) {
 	if from == codec.ULAW {
 		if to == codec.G729 {
-			return newUlawG729(algo, onFrame)
+			return newULAWG729(algo, onFrame)
 		}
 		if to == codec.ULAW {
 			return newULAW2ULAW(algo, ptime, onFrame)
@@ -65,6 +65,48 @@ func NewTranscoder(
 	}
 	return nil, ErrNotSupported
 }
+
+//func Forward(c codec.Codec, algo VADAlgo) Coder {
+//	return &forward{
+//		c:     c,
+//		algo:  algo,
+//		vad:   vad.Voice,
+//		stats: Stats{},
+//	}
+//}
+//
+//type forward struct {
+//	c     codec.Codec
+//	algo  VADAlgo
+//	vad   vad.State
+//	stats Stats
+//}
+//
+//func (f *forward) Close() error { return nil }
+//
+//func (f *forward) From() codec.Codec { return f.c }
+//
+//func (f *forward) To() codec.Codec { return f.c }
+//
+//func (f *forward) Algo() VADAlgo { return f.algo }
+//
+//func (f *forward) VAD() vad.State { return f.vad }
+//
+//func (f *forward) Ptime() codec.Ptime { return 10 }
+//
+//func (f *forward) Stats() *Stats { return &f.stats }
+//
+//func (f *forward) Duration() time.Duration { return f.stats.Duration() }
+//
+//func (f *forward) Dropped(ptime codec.Ptime) error { return nil }
+//
+//func (f *forward) Transcode(kind FrameType, b []byte) error {
+//	switch kind {
+//	case FrameVoice:
+//
+//	}
+//	return nil
+//}
 
 type Frame struct {
 	Kind     FrameType
@@ -96,6 +138,7 @@ const (
 	FrameNoise   FrameType = 0
 	FrameVoice   FrameType = 1
 	FrameDropped FrameType = 2
+	FrameEOF     FrameType = 3
 )
 
 const (

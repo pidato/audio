@@ -1,56 +1,42 @@
-package transcode
+package coder
 
 import (
-	"errors"
-	"fmt"
 	"github.com/pidato/audio/codec"
+	"github.com/pidato/audio/g711"
 	"github.com/pidato/audio/g729"
 	"github.com/pidato/audio/pool"
-	"github.com/pidato/audio/util"
 	"github.com/pidato/audio/vad"
 	"time"
 )
 
-var _ Transcoder = &g729ulaw{}
+var _ Coder = &g729ulaw{}
 
-type g729pcm struct {
-	to             codec.Codec
-	pcm            []int16
-	upsampled      []int16
-	upsampledState [8]int32
-	stats          Stats
-	dec            *g729.Decoder
-	vad            *vad.VAD
-	vadState       vad.State
-	vadAlgo        VADAlgo
-	onFrame        OnFrame
+type g729ulaw struct {
+	pcm      []int16
+	frame    []byte
+	stats    Stats
+	dec      *g729.Decoder
+	vad      *vad.VAD
+	vadState vad.State
+	vadAlgo  VADAlgo
+	onFrame  OnFrame
 }
 
-func newG729PCM(to codec.Codec, algo VADAlgo, onFrame OnFrame) (*g729pcm, error) {
-	if to == nil {
-		return nil, errors.New("to codec must be set")
-	}
+func newG729ulaw(algo VADAlgo, onFrame OnFrame) (*g729ulaw, error) {
 	if onFrame == nil {
 		onFrame = func(kind Frame) error {
 			return nil
 		}
 	}
-	u := &g729pcm{
+	u := &g729ulaw{
 		pcm:     pool.I16Get(80),
+		frame:   pool.U8Get(80),
 		onFrame: onFrame,
 		vadAlgo: algo,
 		dec:     g729.NewDecoder(),
 		stats: Stats{
 			ptime: 10,
 		},
-	}
-	switch to.SampleRate() {
-	case 8000:
-	case 16000:
-		u.upsampled = pool.I16Get(160)
-	default:
-		_ = u.Close()
-		return nil, fmt.Errorf("sample size must be 8000 or 16000 and not %d", to.SampleRate())
 	}
 	switch algo {
 	case NoVAD:
@@ -69,31 +55,31 @@ func newG729PCM(to codec.Codec, algo VADAlgo, onFrame OnFrame) (*g729pcm, error)
 	return u, nil
 }
 
-func (u *g729pcm) From() codec.Codec { return codec.G729 }
+func (u *g729ulaw) From() codec.Codec { return codec.G729 }
 
-func (u *g729pcm) To() codec.Codec { return u.to }
+func (u *g729ulaw) To() codec.Codec { return codec.ULAW }
 
-func (u *g729pcm) Algo() VADAlgo {
+func (u *g729ulaw) Algo() VADAlgo {
 	return u.vadAlgo
 }
 
-func (u *g729pcm) VAD() vad.State {
+func (u *g729ulaw) VAD() vad.State {
 	return u.vadState
 }
 
-func (u *g729pcm) Ptime() codec.Ptime {
+func (u *g729ulaw) Ptime() codec.Ptime {
 	return u.stats.ptime
 }
 
-func (u *g729pcm) Stats() *Stats {
+func (u *g729ulaw) Stats() *Stats {
 	return &u.stats
 }
 
-func (u *g729pcm) Duration() time.Duration {
+func (u *g729ulaw) Duration() time.Duration {
 	return u.stats.Duration()
 }
 
-func (g *g729pcm) Close() error {
+func (g *g729ulaw) Close() error {
 	if g.dec != nil {
 		_ = g.dec.Close()
 		g.dec = nil
@@ -106,14 +92,14 @@ func (g *g729pcm) Close() error {
 		pool.I16Release(g.pcm)
 		g.pcm = nil
 	}
-	if g.upsampled != nil {
-		pool.I16Release(g.upsampled)
-		g.upsampled = nil
+	if g.frame != nil {
+		pool.U8Release(g.frame)
+		g.frame = nil
 	}
 	return nil
 }
 
-func (u *g729pcm) Dropped(ptime codec.Ptime) error {
+func (u *g729ulaw) Dropped(ptime codec.Ptime) error {
 	if ptime == u.stats.ptime {
 		u.stats.addFrames(1)
 		u.stats.addDropped(1)
@@ -133,8 +119,7 @@ func (u *g729pcm) Dropped(ptime codec.Ptime) error {
 	return nil
 }
 
-func (g *g729pcm) Transcode(kind FrameType, b []byte) error {
-	frame := g.pcm
+func (g *g729ulaw) Transcode(kind FrameType, b []byte) error {
 	switch len(b) {
 	case 0:
 		g.stats.addFrames(1)
@@ -144,22 +129,17 @@ func (g *g729pcm) Transcode(kind FrameType, b []byte) error {
 				return err
 			}
 
-			if g.upsampled != nil {
-				if err := vad.UpSampleBy2(frame, g.upsampled, &g.upsampledState); err != nil {
-					return err
-				}
-				frame = g.upsampled
-			}
+			g711.EncodeULAW(g.frame, g.pcm)
 
 			if g.vad != nil {
 				g.vadState = g.vad.Process(g.pcm)
 				if g.vadState == vad.Voice {
-					return g.onFrame(NewFrame(FrameVoice, 10, util.CastInt16ToBytes(frame)))
+					return g.onFrame(NewFrame(FrameVoice, 10, g.frame))
 				} else {
-					return g.onFrame(NewFrame(FrameNoise, 10, util.CastInt16ToBytes(frame)))
+					return g.onFrame(NewFrame(FrameNoise, 10, g.frame))
 				}
 			} else {
-				return g.onFrame(NewFrame(FrameNoise, 10, util.CastInt16ToBytes(frame)))
+				return g.onFrame(NewFrame(FrameNoise, 10, g.frame))
 			}
 		} else {
 			return g.onFrame(NewFrame(FrameDropped, 10, b))
@@ -170,23 +150,17 @@ func (g *g729pcm) Transcode(kind FrameType, b []byte) error {
 		if err := g.dec.DecodeWithOptions(b, false, true, false, g.pcm); err != nil {
 			return err
 		}
-
-		if g.upsampled != nil {
-			if err := vad.UpSampleBy2(frame, g.upsampled, &g.upsampledState); err != nil {
-				return err
-			}
-			frame = g.upsampled
-		}
+		g711.EncodeULAW(g.frame, g.pcm)
 
 		if g.vad != nil {
 			g.vadState = g.vad.Process(g.pcm)
 			if g.vadState == vad.Voice {
-				return g.onFrame(NewFrame(FrameVoice, 10, util.CastInt16ToBytes(frame)))
+				return g.onFrame(NewFrame(FrameVoice, 10, g.frame))
 			} else {
-				return g.onFrame(NewFrame(FrameNoise, 10, util.CastInt16ToBytes(frame)))
+				return g.onFrame(NewFrame(FrameNoise, 10, g.frame))
 			}
 		} else {
-			return g.onFrame(NewFrame(FrameNoise, 10, util.CastInt16ToBytes(frame)))
+			return g.onFrame(NewFrame(FrameNoise, 10, g.frame))
 		}
 	case 10:
 		g.stats.addFrames(1)
@@ -194,23 +168,17 @@ func (g *g729pcm) Transcode(kind FrameType, b []byte) error {
 		if err := g.dec.DecodeWithOptions(b, false, false, false, g.pcm); err != nil {
 			return err
 		}
-
-		if g.upsampled != nil {
-			if err := vad.UpSampleBy2(frame, g.upsampled, &g.upsampledState); err != nil {
-				return err
-			}
-			frame = g.upsampled
-		}
+		g711.EncodeULAW(g.frame, g.pcm)
 
 		if g.vad != nil {
 			g.vadState = g.vad.Process(g.pcm)
 			if g.vadState == vad.Voice {
-				return g.onFrame(NewFrame(FrameVoice, 10, util.CastInt16ToBytes(frame)))
+				return g.onFrame(NewFrame(FrameVoice, 10, g.frame))
 			} else {
-				return g.onFrame(NewFrame(FrameNoise, 10, util.CastInt16ToBytes(frame)))
+				return g.onFrame(NewFrame(FrameNoise, 10, g.frame))
 			}
 		} else {
-			return g.onFrame(NewFrame(FrameVoice, 10, util.CastInt16ToBytes(frame)))
+			return g.onFrame(NewFrame(FrameVoice, 10, g.frame))
 		}
 	default:
 		for begin := 0; begin < len(b); begin += 10 {
@@ -226,52 +194,40 @@ func (g *g729pcm) Transcode(kind FrameType, b []byte) error {
 				if err := g.dec.DecodeWithOptions(packet, false, true, false, g.pcm); err != nil {
 					return err
 				}
-
-				if g.upsampled != nil {
-					if err := vad.UpSampleBy2(frame, g.upsampled, &g.upsampledState); err != nil {
-						return err
-					}
-					frame = g.upsampled
-				}
+				g711.EncodeULAW(g.frame, g.pcm)
 
 				if g.vad != nil {
 					g.vadState = g.vad.Process(g.pcm)
 					if g.vadState == vad.Voice {
-						return g.onFrame(NewFrame(FrameVoice, 10, util.CastInt16ToBytes(frame)))
+						return g.onFrame(NewFrame(FrameVoice, 10, g.frame))
 					} else {
-						return g.onFrame(NewFrame(FrameNoise, 10, util.CastInt16ToBytes(frame)))
+						return g.onFrame(NewFrame(FrameNoise, 10, g.frame))
 					}
 				} else {
-					return g.onFrame(NewFrame(FrameNoise, 10, util.CastInt16ToBytes(frame)))
+					return g.onFrame(NewFrame(FrameNoise, 10, g.frame))
 				}
 			case 10:
 				if err := g.dec.DecodeWithOptions(packet, false, false, false, g.pcm); err != nil {
 					return err
 				}
-
-				if g.upsampled != nil {
-					if err := vad.UpSampleBy2(frame, g.upsampled, &g.upsampledState); err != nil {
-						return err
-					}
-					frame = g.upsampled
-				}
+				g711.EncodeULAW(g.frame, g.pcm)
 
 				if g.vad != nil {
 					g.vadState = g.vad.Process(g.pcm)
 					if g.vadState == vad.Voice {
 						g.stats.addVoice(1)
-						if err := g.onFrame(NewFrame(FrameVoice, 10, util.CastInt16ToBytes(frame))); err != nil {
+						if err := g.onFrame(NewFrame(FrameVoice, 10, g.frame)); err != nil {
 							return err
 						}
 					} else {
 						g.stats.addNoise(1)
-						if err := g.onFrame(NewFrame(FrameNoise, 10, util.CastInt16ToBytes(frame))); err != nil {
+						if err := g.onFrame(NewFrame(FrameNoise, 10, g.frame)); err != nil {
 							return err
 						}
 					}
 				} else {
 					g.stats.addVoice(1)
-					if err := g.onFrame(NewFrame(FrameVoice, 10, util.CastInt16ToBytes(frame))); err != nil {
+					if err := g.onFrame(NewFrame(FrameVoice, 10, g.frame)); err != nil {
 						return err
 					}
 				}

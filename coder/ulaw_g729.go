@@ -1,7 +1,8 @@
-package transcode
+package coder
 
 import (
 	"github.com/pidato/audio/codec"
+	"github.com/pidato/audio/g711"
 	"github.com/pidato/audio/g729"
 	"github.com/pidato/audio/pool"
 	"github.com/pidato/audio/vad"
@@ -9,7 +10,7 @@ import (
 	"time"
 )
 
-var _ Transcoder = &ulawG729{}
+var _ Coder = &ulawG729{}
 
 type ulawG729 struct {
 	pcm      []int16
@@ -23,7 +24,7 @@ type ulawG729 struct {
 	onFrame  OnFrame
 }
 
-func newUlawG729(algo VADAlgo, onFrame OnFrame) (*ulawG729, error) {
+func newULAWG729(algo VADAlgo, onFrame OnFrame) (*ulawG729, error) {
 	if onFrame == nil {
 		onFrame = func(frame Frame) error {
 			return nil
@@ -39,6 +40,8 @@ func newUlawG729(algo VADAlgo, onFrame OnFrame) (*ulawG729, error) {
 		vadAlgo: algo,
 	}
 	switch algo {
+	case G729VAD:
+		// ignore
 	case WebRTCQuality:
 		u.vad, _ = vad.New(8000, vad.Quality)
 	case WebRTCLowBitrate:
@@ -47,6 +50,8 @@ func newUlawG729(algo VADAlgo, onFrame OnFrame) (*ulawG729, error) {
 		u.vad, _ = vad.New(8000, vad.Aggressive)
 	case WebRTCVeryAggressive:
 		u.vad, _ = vad.New(8000, vad.VeryAggressive)
+	default:
+		u.vad, _ = vad.New(8000, vad.LowBitrate)
 	}
 	u.enc = g729.NewEncoder(true)
 	return u, nil
@@ -168,7 +173,7 @@ func (u *ulawG729) Transcode(kind FrameType, b []byte) error {
 func (u *ulawG729) push(b []byte) error {
 	u.stats.addFrames(1)
 	pcm := u.pcm
-	codec.DecodeULAW(pcm, b)
+	g711.DecodeULAW(pcm, b)
 	length, err := u.enc.Encode(pcm, u.encoded)
 	if err != nil {
 		return err
