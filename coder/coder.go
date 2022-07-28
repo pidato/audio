@@ -47,10 +47,13 @@ func New(
 ) (Coder, error) {
 	if from == codec.ULAW {
 		if to == codec.G729 {
-			return newULAWG729(algo, onFrame)
+			return newULAWG729(ptime, onFrame)
 		}
 		if to == codec.ULAW {
 			return newULAW2ULAW(algo, ptime, onFrame)
+		}
+		if to == codec.PCM8 || to == codec.PCM16 {
+			return newULAWPCM(to, algo, ptime, onFrame)
 		}
 		return nil, ErrNotSupported
 	}
@@ -59,7 +62,10 @@ func New(
 			return newG729ulaw(algo, onFrame)
 		}
 		if to == codec.G729 {
-			return newG729G729(algo, onFrame)
+			return newG729G729(ptime, onFrame)
+		}
+		if to == codec.PCM8 || to == codec.PCM16 {
+			return newG729PCM(to, ptime, onFrame)
 		}
 		return nil, ErrNotSupported
 	}
@@ -146,7 +152,8 @@ const (
 )
 
 type Stats struct {
-	ptime   codec.Ptime
+	ptime codec.Ptime
+	//millis  int64
 	frames  int64
 	dropped int64
 	comfort int64
@@ -154,20 +161,27 @@ type Stats struct {
 	noise   int64
 }
 
-func (s *Stats) addFrames(count int64) {
-	atomic.AddInt64(&s.frames, count)
+//func (s *Stats) addFrames(count int64) {
+//	atomic.AddInt64(&s.frames, count)
+//}
+//func (s *Stats) addMillis(count int64) {
+//	atomic.AddInt64(&s.millis, count)
+//}
+func (s *Stats) addVoice(millis int64) {
+	atomic.AddInt64(&s.frames, 1)
+	atomic.AddInt64(&s.voice, millis)
 }
-func (s *Stats) addVoice(count int64) {
-	atomic.AddInt64(&s.voice, count)
+func (s *Stats) addNoise(millis int64) {
+	atomic.AddInt64(&s.frames, 1)
+	atomic.AddInt64(&s.noise, millis)
 }
-func (s *Stats) addNoise(count int64) {
-	atomic.AddInt64(&s.noise, count)
+func (s *Stats) addDropped(millis int64) {
+	atomic.AddInt64(&s.frames, 1)
+	atomic.AddInt64(&s.dropped, millis)
 }
-func (s *Stats) addDropped(count int64) {
-	atomic.AddInt64(&s.dropped, count)
-}
-func (s *Stats) addComfort(count int64) {
-	atomic.AddInt64(&s.comfort, count)
+func (s *Stats) addComfort(millis int64) {
+	atomic.AddInt64(&s.frames, 1)
+	atomic.AddInt64(&s.comfort, millis)
 }
 
 func (s *Stats) Ptime() codec.Ptime {
@@ -179,18 +193,29 @@ func (s *Stats) Frames() int64 {
 func (s *Stats) Voice() int64 {
 	return atomic.LoadInt64(&s.voice)
 }
+func (s *Stats) VoiceDur() time.Duration {
+	return time.Millisecond * time.Duration(s.Voice())
+}
 func (s *Stats) Noise() int64 {
 	return atomic.LoadInt64(&s.noise)
+}
+func (s *Stats) NoiseDur() time.Duration {
+	return time.Millisecond * time.Duration(s.Noise())
 }
 func (s *Stats) Comfort() int64 {
 	return atomic.LoadInt64(&s.comfort)
 }
+func (s *Stats) ComfortDur() time.Duration {
+	return time.Millisecond * time.Duration(s.Comfort())
+}
 func (s *Stats) Dropped() int64 {
 	return atomic.LoadInt64(&s.dropped)
 }
-
+func (s *Stats) DroppedDur() time.Duration {
+	return time.Millisecond * time.Duration(s.Dropped())
+}
 func (s *Stats) Duration() time.Duration {
-	return time.Duration(s.frames) * time.Duration(s.ptime) * time.Millisecond
+	return time.Millisecond * time.Duration(s.Voice()+s.Noise()+s.Dropped()+s.Comfort())
 }
 
 func (s *Stats) Clone() Stats {

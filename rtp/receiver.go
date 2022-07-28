@@ -1,15 +1,22 @@
 package rtp
 
 import (
+	"github.com/pidato/audio/codec"
 	"github.com/pidato/audio/coder"
 	"github.com/pion/rtp"
 )
 
+const (
+	ComfortNoisePayloadType uint8 = 13
+)
+
 type Receiver struct {
 	out        coder.Coder
+	ssrc       uint32
 	rollover   int
 	seq        uint16
 	ptime      int
+	packetSize int
 	count      int64
 	head       uint16
 	tail       uint16
@@ -19,7 +26,7 @@ type Receiver struct {
 	output     *PacketRing
 }
 
-func NewReceiver() (*Receiver, error) {
+func NewReceiver(coder coder.Coder) (*Receiver, error) {
 	input, err := NewPacketRing(32)
 	if err != nil {
 		return nil, err
@@ -40,6 +47,7 @@ func (r *Receiver) Close() error {
 func (r *Receiver) Write(b []byte) (int, error) {
 	p := Packet{Data: b}
 	err := p.Unmarshal(b)
+	if p.PayloadType == 13
 	if err != nil {
 		return 0, err
 	}

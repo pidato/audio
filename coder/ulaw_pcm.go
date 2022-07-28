@@ -32,17 +32,12 @@ func newULAWPCM(to codec.Codec, algo VADAlgo, ptime codec.Ptime, onFrame OnFrame
 	if to == nil {
 		return nil, errors.New("to codec is nil")
 	}
-	if ptime < 0 {
-		ptime = 10
-	}
-	if ptime%10 != 0 {
-		return nil, ErrInvalidPtime
-	}
 	if onFrame == nil {
 		onFrame = func(kind Frame) error {
 			return nil
 		}
 	}
+	ptime.Validate()
 	u := &ulawpcm{
 		to:        to,
 		onFrame:   onFrame,
@@ -156,23 +151,11 @@ func (u *ulawpcm) push(b []byte) error {
 }
 
 func (u *ulawpcm) Dropped(ptime codec.Ptime) error {
-	if ptime == u.stats.ptime {
-		u.stats.addFrames(1)
-		u.stats.addDropped(1)
-		return u.onFrame(NewFrame(FrameDropped, ptime, nil))
+	if ptime == 0 {
+		return nil
 	}
-	if ptime == 0 || ptime%u.stats.ptime != 0 {
-		return ErrPartialFrame
-	}
-	count := int(ptime / u.stats.ptime)
-	for i := 0; i < count; i++ {
-		u.stats.addFrames(1)
-		u.stats.addDropped(1)
-		if err := u.onFrame(NewFrame(FrameDropped, u.stats.ptime, nil)); err != nil {
-			return err
-		}
-	}
-	return nil
+	u.stats.addDropped(int64(ptime))
+	return u.onFrame(NewFrame(FrameDropped, ptime, nil))
 }
 
 func (u *ulawpcm) Transcode(kind FrameType, b []byte) error {

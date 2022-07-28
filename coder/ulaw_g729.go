@@ -15,44 +15,46 @@ var _ Coder = &ulawG729{}
 type ulawG729 struct {
 	pcm      []int16
 	in       []byte
-	encoded  []byte
+	frame    []byte
+	next     []byte
 	stats    Stats
 	enc      *g729.Encoder
-	vad      *vad.VAD
 	vadState vad.State
-	vadAlgo  VADAlgo
 	onFrame  OnFrame
 }
 
-func newULAWG729(algo VADAlgo, onFrame OnFrame) (*ulawG729, error) {
+func newULAWG729(ptime codec.Ptime, onFrame OnFrame) (*ulawG729, error) {
 	if onFrame == nil {
 		onFrame = func(frame Frame) error {
 			return nil
 		}
 	}
+	ptime.Validate()
 	u := &ulawG729{
 		stats: Stats{
-			ptime: 10,
+			ptime: ptime,
 		},
 		pcm:     pool.I16Get(80),
-		encoded: pool.U8Get(10),
+		frame:   pool.U8Get(int(ptime)),
 		onFrame: onFrame,
-		vadAlgo: algo,
 	}
-	switch algo {
-	case G729VAD:
-		// ignore
-	case WebRTCQuality:
-		u.vad, _ = vad.New(8000, vad.Quality)
-	case WebRTCLowBitrate:
-		u.vad, _ = vad.New(8000, vad.LowBitrate)
-	case WebRTCAggressive:
-		u.vad, _ = vad.New(8000, vad.Aggressive)
-	case WebRTCVeryAggressive:
-		u.vad, _ = vad.New(8000, vad.VeryAggressive)
-	default:
-		u.vad, _ = vad.New(8000, vad.LowBitrate)
+	if ptime > 10 {
+		u.next = u.frame[:0]
 	}
+	//switch algo {
+	//case G729VAD:
+	//	// ignore
+	//case WebRTCQuality:
+	//	u.vad, _ = vad.New(8000, vad.Quality)
+	//case WebRTCLowBitrate:
+	//	u.vad, _ = vad.New(8000, vad.LowBitrate)
+	//case WebRTCAggressive:
+	//	u.vad, _ = vad.New(8000, vad.Aggressive)
+	//case WebRTCVeryAggressive:
+	//	u.vad, _ = vad.New(8000, vad.VeryAggressive)
+	//default:
+	//	u.vad, _ = vad.New(8000, vad.LowBitrate)
+	//}
 	u.enc = g729.NewEncoder(true)
 	return u, nil
 }
@@ -62,7 +64,7 @@ func (u *ulawG729) From() codec.Codec { return codec.ULAW }
 func (u *ulawG729) To() codec.Codec { return codec.G729 }
 
 func (u *ulawG729) Algo() VADAlgo {
-	return u.vadAlgo
+	return G729VAD
 }
 
 func (u *ulawG729) VAD() vad.State {
@@ -70,7 +72,7 @@ func (u *ulawG729) VAD() vad.State {
 }
 
 func (u *ulawG729) Ptime() codec.Ptime {
-	return 10
+	return u.stats.ptime
 }
 
 func (u *ulawG729) Stats() *Stats {
@@ -94,38 +96,21 @@ func (u *ulawG729) Close() error {
 		pool.U8Release(u.in)
 		u.in = nil
 	}
-	if u.encoded != nil {
-		pool.U8Release(u.encoded)
-		u.encoded = nil
+	if u.frame != nil {
+		pool.U8Release(u.frame)
+		u.frame = nil
 	}
 	return nil
 }
 
 func (u *ulawG729) Dropped(ptime codec.Ptime) error {
-	if ptime == u.stats.ptime {
-		u.stats.addFrames(1)
-		u.stats.addDropped(1)
-		return u.onFrame(NewFrame(FrameDropped, ptime, nil))
-	}
-	if ptime == 0 || ptime%u.stats.ptime != 0 {
-		return ErrPartialFrame
-	}
-	count := int(ptime / u.stats.ptime)
-	for i := 0; i < count; i++ {
-		u.stats.addFrames(1)
-		u.stats.addDropped(1)
-		if err := u.onFrame(NewFrame(FrameDropped, u.stats.ptime, nil)); err != nil {
-			return err
-		}
-	}
-	return nil
+	u.stats.addDropped(int64(ptime))
+	return u.onFrame(NewFrame(FrameDropped, ptime, nil))
 }
 
 func (u *ulawG729) Transcode(kind FrameType, b []byte) error {
 	if kind == FrameDropped {
-		u.stats.addFrames(1)
-		u.stats.addDropped(1)
-		return u.onFrame(NewFrame(FrameDropped, 10, nil))
+		return u.Dropped(u.stats.ptime)
 	}
 	if len(b) == 0 {
 		return io.ErrShortBuffer
@@ -171,33 +156,78 @@ func (u *ulawG729) Transcode(kind FrameType, b []byte) error {
 }
 
 func (u *ulawG729) push(b []byte) error {
-	u.stats.addFrames(1)
-	pcm := u.pcm
-	g711.DecodeULAW(pcm, b)
-	length, err := u.enc.Encode(pcm, u.encoded)
+	pcm := g711.DecodeULAW(u.pcm, b)
+
+	if u.next != nil {
+		next := u.next[len(u.next) : len(u.next)+10]
+		length, err := u.enc.Encode(pcm, next)
+		if err != nil {
+			return err
+		}
+		next = next[0:length]
+
+		switch length {
+		case 0:
+			// Flush voice if available
+			if len(u.next) > 0 {
+				u.stats.addVoice(int64(u.stats.ptime))
+				err := u.onFrame(NewFrame(FrameVoice, codec.Ptime(len(u.next)), u.next))
+				u.next = u.next[:0]
+				if err != nil {
+					return err
+				}
+			}
+			u.vadState = vad.Noise
+			return u.onFrame(NewFrame(FrameNoise, 10, nil))
+		case 2:
+			// Flush voice if available
+			if len(u.next) > 0 {
+				u.stats.addVoice(int64(u.stats.ptime))
+				err := u.onFrame(NewFrame(FrameVoice, codec.Ptime(len(u.next)), u.next))
+				u.next = u.next[:0]
+				if err != nil {
+					return err
+				}
+			}
+			u.vadState = vad.Noise
+			return u.onFrame(NewFrame(FrameNoise, 10, next))
+
+		case 10:
+			u.vadState = vad.Voice
+			u.next = u.next[0 : len(u.next)+10]
+			if len(u.next) == int(u.stats.ptime) {
+				u.stats.addVoice(int64(u.stats.ptime))
+				err := u.onFrame(NewFrame(FrameVoice, codec.Ptime(len(u.next)), u.next))
+				u.next = u.next[:0]
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+
+		default:
+			return ErrInvalidG729Frame
+		}
+	}
+
+	length, err := u.enc.Encode(pcm, u.frame)
 	if err != nil {
 		return err
 	}
-	if u.vad != nil {
-		u.vadState = u.vad.Process(pcm)
-		if u.vadState == vad.Voice {
-			u.stats.addVoice(1)
-			return u.onFrame(NewFrame(FrameVoice, 10, u.encoded[0:length]))
-		} else {
-			u.stats.addNoise(1)
-			return u.onFrame(NewFrame(FrameNoise, 10, u.encoded[0:length]))
-		}
-	} else {
-		switch length {
-		case 0:
-			u.stats.addNoise(1)
-			return u.onFrame(NewFrame(FrameNoise, 10, u.encoded[0:0]))
-		case 2:
-			u.stats.addComfort(1)
-			return u.onFrame(NewFrame(FrameNoise, 10, u.encoded[0:2]))
-		default:
-			u.stats.addVoice(1)
-			return u.onFrame(NewFrame(FrameVoice, 10, u.encoded))
-		}
+	switch length {
+	case 0:
+		u.vadState = vad.Noise
+		u.stats.addNoise(10)
+		return u.onFrame(NewFrame(FrameNoise, 10, u.frame[0:0]))
+	case 2:
+		u.vadState = vad.Noise
+		u.stats.addComfort(10)
+		return u.onFrame(NewFrame(FrameNoise, 10, u.frame[0:2]))
+	case 10:
+		u.vadState = vad.Voice
+		u.stats.addVoice(10)
+		return u.onFrame(NewFrame(FrameVoice, 10, u.frame))
+	default:
+		return ErrInvalidG729Frame
 	}
 }

@@ -18,6 +18,29 @@ func (p Ptime) Duration() time.Duration {
 	return time.Duration(p) * time.Millisecond
 }
 
+func (p *Ptime) Validate() bool {
+	v := int64(*p)
+	if v < 10 {
+		*p = 10
+		return false
+	}
+	m := v % 10
+	if m == 0 {
+		if v > 100 {
+			*p = 100
+			return false
+		}
+		return true
+	}
+	v += m
+	if v > 100 {
+		*p = 100
+		return false
+	}
+	*p = Ptime(v)
+	return false
+}
+
 type Codec interface {
 	PayloadType() uint8
 

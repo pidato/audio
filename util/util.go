@@ -92,18 +92,18 @@ func randomBytes(l int) (b []byte) {
 	return
 }
 
-func append(buf []byte, s string) []byte {
-	lenb, lens := len(buf), len(s)
-	if lenb+lens <= cap(buf) {
-		buf = buf[0 : lenb+lens]
-	} else {
-		panic("mtu exceeded D:")
-	}
-	for i := 0; i < lens; i++ {
-		buf[lenb+i] = byte(s[i])
-	}
-	return buf
-}
+//func append(buf []byte, s string) []byte {
+//	lenb, lens := len(buf), len(s)
+//	if lenb+lens <= cap(buf) {
+//		buf = buf[0 : lenb+lens]
+//	} else {
+//		panic("mtu exceeded D:")
+//	}
+//	for i := 0; i < lens; i++ {
+//		buf[lenb+i] = byte(s[i])
+//	}
+//	return buf
+//}
 
 func Portstr(port uint16) string {
 	return strconv.FormatInt(int64(port), 10)
@@ -136,8 +136,8 @@ func CastInt16ToBytes(pcm []int16) []byte {
 	h := *(*reflect.SliceHeader)(unsafe.Pointer(&pcm))
 	return *(*[]byte)(unsafe.Pointer(&reflect.SliceHeader{
 		Data: h.Data,
-		Len:  len(pcm) * 2,
-		Cap:  len(pcm) * 2,
+		Len:  h.Len * 2,
+		Cap:  h.Cap * 2,
 	}))
 }
 
@@ -149,11 +149,10 @@ func CastBytesToInt16(b []byte) []int16 {
 		b = b[0 : len(b)-1]
 	}
 	h := *(*reflect.SliceHeader)(unsafe.Pointer(&b))
-	l := len(b) / 2
 	return *(*[]int16)(unsafe.Pointer(&reflect.SliceHeader{
 		Data: h.Data,
-		Len:  l,
-		Cap:  l,
+		Len:  h.Len / 2,
+		Cap:  h.Cap / 2,
 	}))
 }
 

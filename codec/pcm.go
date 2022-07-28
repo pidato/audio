@@ -2,7 +2,7 @@ package codec
 
 type pcm8 struct{}
 
-func (pcm8) PT() uint8 {
+func (pcm8) PayloadType() uint8 {
 	return 16
 }
 
@@ -16,7 +16,7 @@ func (pcm8) SampleRate() int32 {
 
 type pcm16 struct{}
 
-func (pcm16) PT() uint8 {
+func (pcm16) PayloadType() uint8 {
 	return 16
 }
 

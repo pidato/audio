@@ -3,6 +3,7 @@ package pool
 import (
 	"errors"
 	"github.com/bytedance/gopkg/lang/syncx"
+	"github.com/pidato/audio/util"
 )
 
 var (
@@ -34,25 +35,16 @@ var (
 	Opus60ms    = newPCMPool(48000, frameSize48khz60ms, nil)
 	Opus120ms   = newPCMPool(48000, frameSize48khz120ms, nil)
 
-	Bytes10    = newBytes(10)
-	Bytes20    = newBytes(20)
-	Bytes30    = newBytes(30)
+	Bytes16    = newBytes(16)
+	Bytes24    = newBytes(24)
 	Bytes32    = newBytes(32)
-	Bytes40    = newBytes(40)
-	Bytes60    = newBytes(60)
+	Bytes48    = newBytes(48)
 	Bytes64    = newBytes(64)
-	Bytes80    = newBytes(80)
-	Bytes120   = newBytes(120)
+	Bytes96    = newBytes(96)
 	Bytes128   = newBytes(128)
-	Bytes160   = newBytes(160)
-	Bytes240   = newBytes(240)
 	Bytes256   = newBytes(256)
-	Bytes320   = newBytes(320)
-	Bytes480   = newBytes(480)
 	Bytes512   = newBytes(512)
-	Bytes640   = newBytes(640)
 	Bytes768   = newBytes(768)
-	Bytes960   = newBytes(960)
 	Bytes1024  = newBytes(1024)
 	Bytes1500  = newBytes(1500)
 	Bytes2048  = newBytes(2048)
@@ -62,14 +54,12 @@ var (
 	Bytes32768 = newBytes(32768)
 	Bytes65535 = newBytes(65535)
 
-	I1680  = newI16Pool(80)
-	I16120 = newI16Pool(120)
-	I16160 = newI16Pool(160)
-	I16240 = newI16Pool(240)
-	I16320 = newI16Pool(320)
-	I16480 = newI16Pool(480)
-	I16640 = newI16Pool(640)
-	I16960 = newI16Pool(960)
+	Bytes160 = newBytes(160)
+	Bytes240 = newBytes(240)
+	Bytes320 = newBytes(320)
+	Bytes480 = newBytes(480)
+	Bytes640 = newBytes(640)
+	Bytes960 = newBytes(960)
 )
 
 type Pool struct {
@@ -232,71 +222,50 @@ func (p *Bytes) Release(buf []byte) {
 	if cap(buf) < p.size {
 		return
 	}
-	buf = buf[:p.size]
-	p.pool.Put(buf)
-}
-
-func BytesOf(size int) *Bytes {
-	switch size {
-	case 10:
-		return Bytes10
-	case 20:
-		return Bytes20
-	case 40:
-		return Bytes40
-	case 80:
-		return Bytes80
-	case 160:
-		return Bytes160
-	case 320:
-		return Bytes320
-	case 640:
-		return Bytes640
-	case 960:
-		return Bytes960
-	}
-	return newBytes(size)
-}
-
-type I16Pool struct {
-	size int
-	pool syncx.Pool
-}
-
-func (b *I16Pool) Size() int {
-	return b.size
-}
-
-func newI16Pool(size int) *I16Pool {
-	p := &I16Pool{
-		size: size,
-		pool: syncx.Pool{New: func() interface{} {
-			return make([]int16, size, size)
-		}},
-	}
-	return p
-}
-
-func (p *I16Pool) Get() []int16 {
-	return p.pool.Get().([]int16)
-}
-
-func (p *I16Pool) Release(buf []int16) {
-	if cap(buf) < p.size {
-		return
-	}
-	buf = buf[:p.size]
+	buf = buf[0:p.size]
 	p.pool.Put(buf)
 }
 
 func U8Get(size int) []byte {
 	switch size {
+	case 8:
+		return Bytes16.Get()[0:8]
+	case 10:
+		return Bytes16.Get()[0:10]
+	case 12:
+		return Bytes16.Get()[0:12]
+	case 16:
+		return Bytes16.Get()
+	case 20:
+		return Bytes24.Get()[0:20]
+	case 24:
+		return Bytes24.Get()
+	case 30:
+		return Bytes32.Get()[0:30]
 	case 32:
 		return Bytes32.Get()
+	case 40:
+		return Bytes48.Get()[0:40]
+	case 48:
+		return Bytes48.Get()
+	case 50:
+		return Bytes64.Get()[0:50]
+	case 60:
+		return Bytes64.Get()[0:60]
 	case 64:
 		return Bytes64.Get()
+	case 70:
+		return Bytes96.Get()[0:70]
+	case 72:
+		return Bytes96.Get()[0:72]
 	case 80:
-		return Bytes80.Get()
+		return Bytes96.Get()[0:80]
+	case 90:
+		return Bytes96.Get()[0:90]
+	case 96:
+		return Bytes96.Get()
+	case 100:
+		return Bytes128.Get()[0:100]
 	case 128:
 		return Bytes128.Get()
 	case 160:
@@ -332,17 +301,26 @@ func U8Get(size int) []byte {
 	case 65535:
 		return Bytes65535.Get()
 	}
+	if size < 8 {
+		return Bytes16.Get()[0:size]
+	}
 	return make([]byte, size, size)
 }
 
 func U8Release(b []byte) {
 	switch cap(b) {
+	case 16:
+		Bytes16.Release(b)
+	case 24:
+		Bytes24.Release(b)
 	case 32:
 		Bytes32.Release(b)
+	case 48:
+		Bytes48.Release(b)
 	case 64:
 		Bytes64.Release(b)
-	case 80:
-		Bytes80.Release(b)
+	case 96:
+		Bytes96.Release(b)
 	case 128:
 		Bytes128.Release(b)
 	case 160:
@@ -383,34 +361,21 @@ func U8Release(b []byte) {
 func I16Get(size int) []int16 {
 	switch size {
 	case 80:
-		return I1680.Get()
+		return util.CastBytesToInt16(Bytes160.Get())
 	case 160:
-		return I16160.Get()
+		return util.CastBytesToInt16(Bytes320.Get())
 	case 320:
-		return I16320.Get()
+		return util.CastBytesToInt16(Bytes640.Get())
 	case 480:
-		return I16480.Get()
+		return util.CastBytesToInt16(Bytes960.Get())
 	case 640:
-		return I16640.Get()
+		return util.CastBytesToInt16(Bytes1500.Get())[0 : 640*2]
 	case 960:
-		return I16960.Get()
+		return util.CastBytesToInt16(Bytes2048.Get())[0 : 960*2]
 	}
-	return make([]int16, size, size)
+	return util.CastBytesToInt16(U8Get(size * 2))[0:size]
 }
 
 func I16Release(b []int16) {
-	switch cap(b) {
-	case 80:
-		I1680.Release(b)
-	case 160:
-		I16160.Release(b)
-	case 320:
-		I16320.Release(b)
-	case 480:
-		I16480.Release(b)
-	case 640:
-		I16640.Release(b)
-	case 960:
-		I16960.Release(b)
-	}
+	U8Release(util.CastInt16ToBytes(b))
 }
